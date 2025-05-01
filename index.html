@@ -84,6 +84,7 @@
     Promise.all([
       d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
       d3.csv("POP.csv", d => ({
+        PlanningArea: d['Planning Area'].trim(),
         Subzone: d['Subzone'].trim(),
         AgeGroup: d['Age Group'].trim(),
         Population: d['Population'] === '-' ? 0 : +d['Population'].replace(/,/g, '').trim()
