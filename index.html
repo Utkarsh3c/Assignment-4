@@ -7,8 +7,10 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
   <style>
-    body { margin:0; padding:0; display:flex; height:100vh; align-items:center; justify-content:center; background:#fff; }
-    .legend { position:absolute; top:10px; left:10px; font-family:sans-serif; }
+    body { margin:0; padding:0; display:flex; height:100vh; align-items:center; justify-content:center; background:#fff; position:relative; }
+    .filter { position:absolute; top:10px; right:10px; font-family:sans-serif; background:#fff; padding:4px 8px; border:1px solid #ccc; border-radius:4px; }
+    .filter select { font-size:14px; }
+    .legend { position:absolute; top:50px; left:10px; font-family:sans-serif; }
     .legend-item { display:flex; align-items:center; margin-bottom:4px; }
     .legend-rect { width:20px; height:10px; margin-right:6px; border:1px solid #999; }
     svg { width:90vw; height:90vh; }
@@ -16,6 +18,10 @@
   </style>
 </head>
 <body>
+  <div class="filter">
+    <label for="ageSelect">Age Group:</label>
+    <select id="ageSelect"></select>
+  </div>
   <div class="legend" id="legend"></div>
   <svg viewBox="0 0 1000 600"></svg>
   <div class="tooltip"></div>
@@ -26,54 +32,55 @@
     const tooltip = d3.select('.tooltip');
 
     Promise.all([
-      d3.json('sgmap.json'),        // use updated geojson filename
-      d3.csv('population.csv', d => ({ Subzone: d.Subzone.trim(), Population: +d.Population.replace(/,/g, '') || 0 }))  // use updated CSV filename
+      d3.json('sgmap.json'),
+      d3.csv('population.csv', d => ({ Subzone: d.Subzone.trim(), PlanningArea: d['Planning Area']?.trim() || '', AgeGroup: d['Age Group'].trim(), Population: +d.Population.replace(/,/g, '') || 0 }))
     ]).then(([geo, data]) => {
-      // Build population lookup
-      const popMap = {};
-      data.forEach(d => {
-        const key = d.Subzone.toUpperCase();
-        popMap[key] = (popMap[key] || 0) + d.Population;
-      });
+      // Collect age groups
+      const ageGroups = Array.from(new Set(data.map(d => d.AgeGroup))).sort();
+      const ageSelect = d3.select('#ageSelect');
+      ageSelect.append('option').attr('value','Total').text('Total');
+      ageGroups.forEach(a=> ageSelect.append('option').attr('value',a).text(a));
 
-      // Viridis color scale
-      const values = Object.values(popMap);
-      const max = d3.max(values) || 0;
-      const step = Math.ceil(max / 7) || 1;
-      const colors = d3.quantize(d3.interpolateViridis, 7);
-      const thresholds = d3.range(step, step * colors.length, step);
-      const scale = d3.scaleThreshold().domain(thresholds).range(colors);
+      ageSelect.on('change', () => updateMap(ageSelect.property('value')));
+      updateMap('Total');
 
-      // Projection and path generator
-      const projection = d3.geoMercator()
-        .center([103.851959, 1.290270])
-        .fitSize([width, height], geo);
-      const path = d3.geoPath().projection(projection);
-
-      // Render map
-      svg.selectAll('path').data(geo.features).enter().append('path')
-        .attr('d', path)
-        .attr('stroke', '#666').attr('stroke-width', 1)
-        .attr('fill', d => {
-          const key = (d.properties.Name || '').trim().toUpperCase();
-          return popMap[key] != null ? scale(popMap[key]) : '#ccc';
-        })
-        .on('mouseover', (e, d) => {
-          const key = (d.properties.Name || '').trim().toUpperCase();
-          const val = popMap[key] || 0;
-          tooltip.style('opacity', 1).html(`<strong>${d.properties.Name}</strong><br/>${val.toLocaleString()}`);
-        })
-        .on('mousemove', e => tooltip.style('left', (e.pageX + 10) + 'px').style('top', (e.pageY + 10) + 'px'))
-        .on('mouseout', () => tooltip.style('opacity', 0));
-
-      // Render legend
-      colors.forEach((c, i) => {
-        const from = i * step;
-        const to = (i + 1) * step;
-        const item = legend.append('div').attr('class', 'legend-item');
-        item.append('div').attr('class', 'legend-rect').style('background', c);
-        item.append('div').text(`${from.toLocaleString()} – ${to.toLocaleString()}`);
-      });
+      function updateMap(group) {
+        // Filter by age
+        const filtered = data.filter(d => group==='Total' || d.AgeGroup===group);
+        // Build lookups
+        const popMap={}, areaMap={};
+        filtered.forEach(d=>{
+          const k=d.Subzone.toUpperCase();
+          popMap[k]=(popMap[k]||0)+d.Population;
+          areaMap[k]=d.PlanningArea;
+        });
+        // Color scale
+        const vals=Object.values(popMap);
+        const max=d3.max(vals)||0;
+        const step=Math.ceil(max/7)||1;
+        const colors=d3.quantize(d3.interpolateViridis,7);
+        const thr=d3.range(step,step*colors.length,step);
+        const scale=d3.scaleThreshold().domain(thr).range(colors);
+        // Projection
+        const projection=d3.geoMercator().center([103.851959,1.290270]).fitSize([width,height],geo);
+        const path=d3.geoPath().projection(projection);
+        // Render
+        const regions=svg.selectAll('path').data(geo.features);
+        regions.enter().append('path').merge(regions)
+          .attr('d',path)
+          .attr('stroke','#666').attr('stroke-width',1)
+          .attr('fill',d=>{const k=(d.properties.Name||'').trim().toUpperCase();return popMap[k]!=null?scale(popMap[k]):'#ccc';})
+          .on('mouseover',(e,d)=>{
+            const k=(d.properties.Name||'').trim().toUpperCase();
+            tooltip.style('opacity',1).html(`<strong>${d.properties.Name}</strong><br/>Area:${areaMap[k]||'—'}<br/>Pop:${(popMap[k]||0).toLocaleString()}`);
+          })
+          .on('mousemove',e=>tooltip.style('left',e.pageX+10+'px').style('top',e.pageY+10+'px'))
+          .on('mouseout',()=>tooltip.style('opacity',0));
+        regions.exit().remove();
+        // Legend
+        legend.selectAll('.legend-item').remove();
+        colors.forEach((c,i)=>{const from=i*step,to=(i+1)*step;const item=legend.append('div').attr('class','legend-item');item.append('div').attr('class','legend-rect').style('background',c);item.append('div').text(`${from.toLocaleString()} – ${to.toLocaleString()}`);});
+      }
     }).catch(console.error);
   </script>
 </body>
