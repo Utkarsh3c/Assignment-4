@@ -62,7 +62,7 @@
 
         // continuous scale
         const vals=Object.values(popMap),max=d3.max(vals)||0;
-        const colorScale=d3.scaleSequential(d3.interpolateViridis).domain([0,max]);
+        const colorScale=d3.scaleSequential(d3.interpolateOranges).domain([0,max]);
 
         // legend gradient
         legendSvg.selectAll('*').remove();
@@ -75,9 +75,7 @@
         });
         legendSvg.append('rect').attr('width',20).attr('height',300).attr('fill','url(#grad)');
         // axis scale
-        const legendScale=d3.scaleLinear().domain([0,max]).range([300,0]);
-        const axis=d3.axisRight(legendScale).ticks(5).tickFormat(d3.format('.2s'));
-        legendSvg.append('g').attr('transform','translate(20,0)').call(axis);
+        
 
         // projection
         const proj=d3.geoMercator().center([103.851959,1.290270]).fitSize([width,height],geo);
