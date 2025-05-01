@@ -97,6 +97,8 @@
         const max = d3.max(values) || 0;
         const step = Math.ceil(max / 7) || 1;
         const colors = d3.quantize(d3.interpolateViridis, 7);
+        // replace highest viridis color (purple) with light grey
+        colors[colors.length - 1] = '#d3d3d3';
         const thresholds = d3.range(step, step * colors.length, step);
         const scale = d3.scaleThreshold().domain(thresholds).range(colors);
 
@@ -106,7 +108,7 @@
         const regions = svg.selectAll('path').data(geo.features);
         regions.enter().append('path').merge(regions)
           .attr('d', path)
-          .attr('stroke', '#666').attr('stroke-width', 1)
+          .attr('stroke', '#333').attr('stroke-width', 2).attr('stroke-width', 1)
           .attr('fill', d => {
             const key = (d.properties.Name || '').trim().toUpperCase();
             return popMap[key] != null ? scale(popMap[key]) : '#ccc';
