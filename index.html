@@ -65,31 +65,40 @@
 
     <script>
       // click handler stub
-      function handleSubzoneClick(name, pop) {
-        alert(`Subzone: ${name}\nPopulation: ${pop}`);
+      function handleSubzoneClick(name, pop, planningArea) {
+        alert(`Subzone: ${name}\nPlanning Area: ${planningArea}\nPopulation: ${pop}`);
       }
 
       Promise.all([
         d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
         d3.csv("population2024.csv")
       ]).then(([geojson, populationRaw]) => {
-        // Prepare age columns (all columns after 'Subzone')
+        // Extract age columns
         const cols = populationRaw.columns || Object.keys(populationRaw[0]);
         const ageCols = cols.filter(c => c !== 'SUBZONE_N' && c !== 'Subzone');
 
-        // Build dropdown
+        // Populate age dropdown
         const ageSel = d3.select('#ageGroup');
         ageCols.forEach(age => {
           ageSel.append('option').attr('value', age).text(age);
         });
 
-        // Map Subzone name to row
-        const popMap = new Map();
+        // Build population lookup by subzone
+        const popRawMap = new Map();
         populationRaw.forEach(r => {
-          popMap.set(r.Subzone.trim().toLowerCase(), r);
+          popRawMap.set(r.Subzone.trim().toLowerCase(), r);
         });
 
-        // Set up SVG
+        // Build planning area lookup from GeoJSON Description HTML
+        const planningMap = {};
+        geojson.features.forEach(f => {
+          const key = f.properties.Name.trim().toLowerCase();
+          const desc = f.properties.Description;
+          const match = /<th>PLN_AREA_N<\/th>\s*<td>(.*?)<\/td>/.exec(desc);
+          planningMap[key] = match ? match[1] : 'Unknown';
+        });
+
+        // Set up SVG & projection
         const width = 800, height = 600;
         const svg = d3.select('#map').append('svg')
                       .attr('viewBox', [0, 0, width, height]);
@@ -111,34 +120,50 @@
           .join('path')
             .attr('class', 'subzone')
             .attr('d', path)
-            .on('mouseover', (event, d) => {
-              const name = d.properties.Name;
-              const pop  = currentPop[name.toLowerCase()] || 0;
+            .on('mouseover', function(event, d) {
+              const name = d.properties.Name.trim();
+              const key  = name.toLowerCase();
+              const pop  = currentPop[key] || 0;
+              const area = planningMap[key] || 'Unknown';
+
+              // highlight
+              d3.select(this)
+                .attr('stroke', '#000')
+                .attr('stroke-width', 3)
+                .raise();
+
               d3.select('#tooltip')
                 .style('opacity', 1)
-                .html(`<strong>${name}</strong><br/>Population: ${pop}`);
+                .html(`<strong>Subzone:</strong> ${name}<br/>` +
+                      `<strong>Planning Area:</strong> ${area}<br/>` +
+                      `<strong>Population:</strong> ${pop.toLocaleString()}`);
             })
             .on('mousemove', (event) => {
               d3.select('#tooltip')
                 .style('left',  (event.pageX + 10) + 'px')
                 .style('top',   (event.pageY + 10) + 'px');
             })
-            .on('mouseout', () => {
+            .on('mouseout', function(event, d) {
+              d3.select(this)
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 1);
               d3.select('#tooltip').style('opacity', 0);
             })
-            .on('click', (event, d) => {
-              const name = d.properties.Name;
-              const pop  = currentPop[name.toLowerCase()] || 0;
-              handleSubzoneClick(name, pop);
+            .on('click', function(event, d) {
+              const name = d.properties.Name.trim();
+              const key  = name.toLowerCase();
+              const pop  = currentPop[key] || 0;
+              const area = planningMap[key] || 'Unknown';
+              handleSubzoneClick(name, pop, area);
             });
 
-        // Zoom & pan
+        // Enable pan & zoom
         svg.call(d3.zoom().scaleExtent([1,8]).on('zoom', ({transform}) => {
           subzonePaths.attr('transform', transform);
           svg.select('.legend').attr('transform', transform);
         }));
 
-        // Legend axis group
+        // Legend axis
         const legendGroup = svg.append('g')
           .attr('class','legend')
           .attr('transform', `translate(${width-220},${height-40})`);
@@ -150,17 +175,16 @@
         const legendAxisG = legendGroup.append('g')
           .attr('transform', `translate(0,${legendHeight})`);
 
-        // Update function
+        // Update choropleth
         function updateChoropleth() {
           const selAge = d3.select('#ageGroup').property('value');
           currentPop = {};
 
-          // Compute population per subzone
           populationRaw.forEach(r => {
             const key = r.Subzone.trim().toLowerCase();
             let val = 0;
             if (selAge === 'All') {
-              ageCols.forEach(col => { val += +r[col] || 0; });
+              ageCols.forEach(col => val += +r[col] || 0);
             } else {
               val = +r[selAge] || 0;
             }
@@ -171,12 +195,11 @@
           const minPop = d3.min(pops);
           const maxPop = d3.max(pops);
 
-          // Color scale
           const colorScale = d3.scaleSequential()
             .domain([minPop, maxPop])
             .interpolator(d3.interpolateBlues);
 
-          // Update gradient stops
+          // update gradient
           svg.select('#legend-gradient')
             .selectAll('stop')
             .data(d3.ticks(0,1,10))
@@ -184,23 +207,23 @@
               .attr('offset', d => `${d*100}%`)
               .attr('stop-color', d => colorScale(minPop + d*(maxPop-minPop)));
 
-          // Update legend axis
+          // update legend axis
           const legendScale = d3.scaleLinear().domain([minPop, maxPop]).range([0, legendWidth]);
           d3.axisBottom(legendScale)
             .ticks(5)
             .tickFormat(d3.format('.2s'))
             (legendAxisG);
 
-          // Recolor subzones
+          // recolor
           subzonePaths.transition().duration(300)
             .attr('fill', f => {
-              const name = f.properties.Name.trim().toLowerCase();
-              const pop  = currentPop[name] || 0;
-              return pop ? colorScale(pop) : '#ccc';
+              const nm = f.properties.Name.trim().toLowerCase();
+              const p  = currentPop[nm] || 0;
+              return p ? colorScale(p) : '#ccc';
             });
         }
 
-        // Initial render
+        // initial render & listener
         updateChoropleth();
         d3.select('#ageGroup').on('change', updateChoropleth);
 
