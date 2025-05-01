@@ -87,7 +87,7 @@
     const legend = d3.select("#legend");
     const tooltip = d3.select("body").append("div").attr("class","tooltip");
     Promise.all([
-      d3.json("sgmap.json"),
+      d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
       d3.csv("POP.csv", d => ({
         Subzone: d['Subzone'].trim(),
         AgeGroup: d['Age Group'].trim(),
