@@ -27,14 +27,39 @@
       font-weight:400;
       color:#666;
     }
-    .filter { position:absolute; top:10px; right:10px; font-family:sans-serif; background:#fff; padding:8px; border:1px solid #ccc; border-radius:4px; }
+    .filter {
+      position:absolute;
+      top:10px;
+      right:10px;
+      font-family:sans-serif;
+      background:#fff;
+      padding:8px;
+      border:1px solid #ccc;
+      border-radius:4px;
+    }
     .filter label { margin-right:6px; font-weight:600; }
     .filter select { margin-right:12px; font-size:14px; }
-    .legend { position:absolute; top:60px; left:10px; font-family:sans-serif; }
+    .legend {
+      position:absolute;
+      top:60px;
+      left:10px;
+      font-family:sans-serif;
+    }
     .legend-item { display:flex; align-items:center; margin-bottom:4px; }
     .legend-rect { width:20px; height:10px; margin-right:6px; border:1px solid #999; }
     svg { width:90vw; height:90vh; }
-    .tooltip { position:absolute; pointer-events:none; background:#fff; padding:4px 8px; border:1px solid #aaa; border-radius:4px; font-size:12px; box-shadow:0 1px 2px rgba(0,0,0,0.2); opacity:0; transition:opacity 0.1s; }
+    .tooltip {
+      position:absolute;
+      pointer-events:none;
+      background:#fff;
+      padding:4px 8px;
+      border:1px solid #aaa;
+      border-radius:4px;
+      font-size:12px;
+      box-shadow:0 1px 2px rgba(0,0,0,0.2);
+      opacity:0;
+      transition:opacity 0.1s;
+    }
   </style>
 </head>
 <body>
@@ -71,64 +96,63 @@
     ]).then(([geo, data]) => {
       const ageSelect = d3.select('#ageSelect');
       const ageGroups = Array.from(new Set(data.map(d => d.AgeGroup))).sort();
-      ageSelect.append('option').attr('value', 'Total').text('Total');
-      ageGroups.forEach(a => ageSelect.append('option').attr('value', a).text(a));
+      ageSelect.append('option').attr('value','Total').text('Total');
+      ageGroups.forEach(a => ageSelect.append('option').attr('value',a).text(a));
 
-      ageSelect.on('change', () => updateMap());
-      d3.select('#genderSelect').on('change', () => updateMap());
+      ageSelect.on('change', updateMap);
+      d3.select('#genderSelect').on('change', updateMap);
       updateMap();
 
       function updateMap() {
         const selAge = ageSelect.property('value');
         const selSex = d3.select('#genderSelect').property('value');
         const filtered = data.filter(d =>
-          (selAge === 'Total' || d.AgeGroup === selAge) &&
-          (selSex === 'Total' || d.Sex === selSex)
+          (selAge==='Total' || d.AgeGroup===selAge) &&
+          (selSex==='Total' || d.Sex===selSex)
         );
 
-        const popMap = {}, areaMap = {};
+        const popMap={}, areaMap={};
         filtered.forEach(d => {
           const key = d.Subzone.toUpperCase();
-          popMap[key] = (popMap[key] || 0) + d.Population;
+          popMap[key] = (popMap[key]||0) + d.Population;
           areaMap[key] = d.PlanningArea;
         });
 
-        const values = Object.values(popMap);
-        const max = d3.max(values) || 0;
-        const step = Math.ceil(max / 7) || 1;
-        const colors = d3.quantize(d3.interpolateViridis, 7);
-        const thresholds = d3.range(step, step * colors.length, step); = d3.range(step, step * colors.length, step);
+        const vals = Object.values(popMap);
+        const max = d3.max(vals) || 0;
+        const step = Math.ceil(max/7) || 1;
+        const colors = d3.quantize(d3.interpolateViridis,7);
+        const thresholds = d3.range(step, step*colors.length, step);
         const scale = d3.scaleThreshold().domain(thresholds).range(colors);
 
-        const projection = d3.geoMercator().center([103.851959, 1.290270]).fitSize([width, height], geo);
+        const projection = d3.geoMercator().center([103.851959,1.290270]).fitSize([width,height],geo);
         const path = d3.geoPath().projection(projection);
 
         const regions = svg.selectAll('path').data(geo.features);
         regions.enter().append('path').merge(regions)
-          .attr('d', path)
-          .attr('stroke', '#333').attr('stroke-width', 2).attr('stroke-width', 1)
-          .attr('fill', d => {
-            const key = (d.properties.Name || '').trim().toUpperCase();
-            return popMap[key] != null ? scale(popMap[key]) : '#ccc';
+          .attr('d',path)
+          .attr('stroke','#333').attr('stroke-width',2)
+          .attr('fill',d=>{
+            const key = (d.properties.Name||'').trim().toUpperCase();
+            return popMap[key]!=null?scale(popMap[key]):'#ccc';
           })
-          .attr('fill-opacity', 0.7)
-          .on('mouseover', (e, d) => {
-            const key = (d.properties.Name || '').trim().toUpperCase();
-            const val = popMap[key] || 0;
-            const area = areaMap[key] || '—';
-            tooltip.style('opacity', 1)
-              .html(`<strong>${d.properties.Name}</strong><br/>Area: ${area}<br/>Pop: ${val.toLocaleString()}`);
+          .attr('fill-opacity',0.7)
+          .on('mouseover',(e,d)=>{
+            const key=(d.properties.Name||'').trim().toUpperCase();
+            const val=popMap[key]||0;
+            const area=areaMap[key]||'—';
+            tooltip.style('opacity',1)
+              .html(`<strong>${d.properties.Name}</strong><br/>Area: ${area}<br/>Population: ${val.toLocaleString()}`);
           })
-          .on('mousemove', e => tooltip.style('left', (e.pageX + 10) + 'px').style('top', (e.pageY + 10) + 'px'))
-          .on('mouseout', () => tooltip.style('opacity', 0));
+          .on('mousemove',e=>tooltip.style('left',e.pageX+10+'px').style('top',e.pageY+10+'px'))
+          .on('mouseout',()=>tooltip.style('opacity',0));
         regions.exit().remove();
 
         legend.selectAll('.legend-item').remove();
-        colors.forEach((c, i) => {
-          const from = i * step;
-          const to = (i + 1) * step;
-          const item = legend.append('div').attr('class', 'legend-item');
-          item.append('div').attr('class', 'legend-rect').style('background', c);
+        colors.forEach((c,i)=>{
+          const from=i*step, to=(i+1)*step;
+          const item=legend.append('div').attr('class','legend-item');
+          item.append('div').attr('class','legend-rect').style('background',c);
           item.append('div').text(`${from.toLocaleString()} – ${to.toLocaleString()}`);
         });
       }
