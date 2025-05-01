@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Singapore Choropleth Example</title>
+    <!-- D3 v7 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        width: 100%;
+        height: 600px;
+        position: relative;
+      }
+      svg {
+        width: 100%;
+        height: 100%;
+      }
+      .subzone {
+        stroke: #fff;
+        stroke-width: 1;
+        cursor: pointer;
+      }
+      .tooltip {
+        position: absolute;
+        background-color: rgba(0,0,0,0.7);
+        color: #fff;
+        padding: 5px 8px;
+        border-radius: 3px;
+        pointer-events: none;
+        font-size: 14px;
+      }
+      .legend text {
+        font-size: 12px;
+        fill: #333;
+      }
+      .legend .domain {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 style="text-align:center;">Singapore Subzones Choropleth</h1>
+    <div id="map"></div>
+    <div id="tooltip" class="tooltip" style="opacity:0;"></div>
+
+    <script>
+      // 1. Dimensions
+      const width = 800;
+      const height = 600;
+
+      // 2. Append an SVG inside #map
+      const svg = d3.select("#map")
+        .append("svg")
+        .attr("viewBox", [0, 0, width, height]);
+
+      const tooltip = d3.select("#tooltip");
+
+      // 3. Initial projection (will be updated with fitSize)
+      const projection = d3.geoMercator();
+      const path = d3.geoPath().projection(projection);
+
+      Promise.all([
+        d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
+        d3.csv("population_data.csv")
+      ]).then(([geojson, popData]) => {
+        // Build population lookup
+        const popBySubzone = {};
+        popData.forEach(d => {
+          popBySubzone[d.SubzoneName] = +d.Population;
+        });
+
+        // Compute min/max population
+        const pops = popData.map(d => +d.Population);
+        const minPop = d3.min(pops);
+        const maxPop = d3.max(pops);
+
+        // Create sequential color scale
+        const colorScale = d3.scaleSequential()
+          .domain([minPop, maxPop])
+          .interpolator(d3.interpolateBlues);
+
+        // Fit the projection to the GeoJSON features
+        projection.fitSize([width, height], geojson);
+
+        // Draw subzones
+        svg.selectAll(".subzone")
+          .data(geojson.features)
+          .join("path")
+            .attr("class", "subzone")
+            .attr("d", path)
+            .attr("fill", d => {
+              const name = d.properties.SubzoneName;
+              const pop = popBySubzone[name] || 0;
+              return pop ? colorScale(pop) : "#ccc";
+            })
+            .on("mouseover", (event, d) => {
+              const name = d.properties.SubzoneName;
+              const pop = popBySubzone[name] || 0;
+              tooltip.style("opacity", 1)
+                .html(`<strong>${name}</strong><br/>Population: ${pop}`);
+            })
+            .on("mousemove", (event) => {
+              tooltip.style("left", (event.pageX + 10) + "px")
+                     .style("top", (event.pageY + 10) + "px");
+            })
+            .on("mouseout", () => {
+              tooltip.style("opacity", 0);
+            });
+
+        // 4. Legend setup
+        const legendWidth = 200;
+        const legendHeight = 10;
+
+        // Gradient definition
+        const defs = svg.append("defs");
+        const gradient = defs.append("linearGradient")
+          .attr("id", "legend-gradient")
+          .attr("x1", "0%").attr("y1", "0%")
+          .attr("x2", "100%").attr("y2", "0%");
+
+        gradient.selectAll("stop")
+          .data(d3.ticks(0, 1, 10))
+          .join("stop")
+            .attr("offset", d => `${d * 100}%`)
+            .attr("stop-color", d => colorScale(minPop + d * (maxPop - minPop)));
+
+        // Draw legend group
+        const legend = svg.append("g")
+          .attr("class", "legend")
+          .attr("transform", `translate(${width - legendWidth - 20},${height - 40})`);
+
+        legend.append("rect")
+          .attr("width", legendWidth)
+          .attr("height", legendHeight)
+          .style("fill", "url(#legend-gradient)");
+
+        // Legend axis
+        const legendScale = d3.scaleLinear()
+          .domain([minPop, maxPop])
+          .range([0, legendWidth]);
+
+        const legendAxis = d3.axisBottom(legendScale)
+          .ticks(5)
+          .tickFormat(d3.format(".2s"));
+
+        legend.append("g")
+          .attr("transform", `translate(0, ${legendHeight})`)
+          .call(legendAxis);
+
+        // 5. Pan and zoom
+        const zoom = d3.zoom()
+          .scaleExtent([1, 8])
+          .on("zoom", ({transform}) => {
+            svg.selectAll("path.subzone")
+               .attr("transform", transform);
+          });
+
+        svg.call(zoom);
+
+      }).catch(err => console.error("Error loading data:", err));
+    </script>
+  </body>
+</html>
