@@ -68,7 +68,7 @@
   // ─── 1. LOAD DATA ──────────────────────────────────────────────────────
   Promise.all([
     d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
-    d3.csv("population_by_age.csv")
+    d3.csv("population2024.csv")
   ]).then(([geojson, ageRaw]) => {
 
     // 1.a. Identify all bracket columns (everything except the first)
