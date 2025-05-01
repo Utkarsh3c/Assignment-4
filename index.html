@@ -8,77 +8,18 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
   <style>
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: #fff;
-      margin: 0;
-      padding: 20px;
-      color: #333;
-    }
-    .filter-container {
-      text-align: center;
-      margin-bottom: 10px;
-    }
-    .filter-container label {
-      font-weight: 600;
-      margin-right: 8px;
-    }
-    .filter-container select {
-      padding: 6px 12px;
-      font-size: 0.9em;
-      border: 1px solid #aaa;
-      border-radius: 4px;
-    }
-    .figure {
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      margin-top: 20px;
-    }
-    .legend-col {
-      width: 200px;
-      margin-right: 20px;
-    }
-    .legend-item {
-      display: flex;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    .legend-rect {
-      width: 20px;
-      height: 10px;
-      margin-right: 8px;
-      border: 1px solid #999;
-    }
-    svg {
-      flex: 1;
-      height: auto;
-    }
-    h1 {
-      font-size: 1.5em;
-      font-weight: 800;
-      margin: 0;
-      text-align: center;
-    }
-    h2.subtitle {
-      font-size: 1em;
-      font-weight: 400;
-      color: #666;
-      margin: 4px 0 0;
-      text-align: center;
-    }
-    .tooltip {
-      position: absolute;
-      pointer-events: none;
-      background: white;
-      padding: 6px 10px;
-      border: 1px solid #aaa;
-      border-radius: 4px;
-      font-size: 12px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-      opacity: 0;
-      transition: opacity 0.1s;
-    }
+    body { font-family: 'Inter', sans-serif; background-color: #fff; margin: 0; padding: 20px; color: #333; }
+    .filter-container { text-align: center; margin-bottom: 10px; }
+    .filter-container label { font-weight: 600; margin-right: 8px; }
+    .filter-container select { padding: 6px 12px; font-size: 0.9em; border: 1px solid #aaa; border-radius: 4px; }
+    .figure { display: flex; align-items: flex-start; justify-content: center; margin-top: 20px; }
+    .legend-col { width: 200px; margin-right: 20px; }
+    .legend-item { display: flex; align-items: center; margin-bottom: 8px; }
+    .legend-rect { width: 20px; height: 10px; margin-right: 8px; border: 1px solid #999; }
+    svg { flex: 1; height: auto; }
+    h1 { font-size: 1.5em; font-weight: 800; margin: 0; text-align: center; }
+    h2.subtitle { font-size: 1em; font-weight: 400; color: #666; margin: 4px 0 0; text-align: center; }
+    .tooltip { position: absolute; pointer-events: none; background: white; padding: 6px 10px; border: 1px solid #aaa; border-radius: 4px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.2); opacity: 0; transition: opacity 0.1s; }
   </style>
 </head>
 <body>
@@ -109,6 +50,13 @@
         Population: d['Population'] === '-' ? 0 : +d['Population'].replace(/,/g, '').trim()
       }))
     ]).then(([geo, data]) => {
+      // Detect the correct property key for subzone name
+      const sampleProps = geo.features[0].properties;
+      const subzoneKey = Object.keys(sampleProps).find(k => k.toLowerCase().includes('subzone'))
+                         || Object.keys(sampleProps).find(k => k.toLowerCase().includes('name'))
+                         || Object.keys(sampleProps)[0];
+      console.log('Joining on geoJSON property:', subzoneKey);
+
       // Populate age group selector
       const ageSelect = d3.select("#ageSelect");
       const ageGroups = Array.from(new Set(data.map(d => d.AgeGroup))).sort();
@@ -150,15 +98,15 @@
           .attr("d", path)
           .attr("stroke", "#666").attr("stroke-width", 1)
           .attr("fill", d => {
-            const key = d.properties.Name.trim().toUpperCase();
+            const key = (d.properties[subzoneKey]||'').trim().toUpperCase();
             return popMap[key] != null ? colorScale(popMap[key]) : "#ccc";
           })
           .on("mouseover", (event, d) => {
             d3.select(event.currentTarget).raise().attr("stroke", "#333").attr("stroke-width", 2);
-            const key = d.properties.Name.trim().toUpperCase();
+            const key = (d.properties[subzoneKey]||'').trim().toUpperCase();
             const val = popMap[key] || 0;
             tooltip.transition().duration(50).style("opacity", 1);
-            tooltip.html(`<strong>${d.properties.Name}</strong><br/>${val.toLocaleString()}`);
+            tooltip.html(`<strong>${d.properties[subzoneKey]}</strong><br/>${val.toLocaleString()}`);
           })
           .on("mousemove", event => tooltip.style("left", (event.pageX + 10) + "px").style("top", (event.pageY + 10) + "px"))
           .on("mouseout", event => {
@@ -177,7 +125,7 @@
           item.append("div").text(`${from.toLocaleString()} – ${to.toLocaleString()}`);
         });
       }
-    }).catch(err => console.error(err));
+    }).catch(err => console.error('Error loading data:', err));
   </script>
 </body>
 </html>
