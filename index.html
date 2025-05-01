@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8">
-    <title>Singapore Choropleth Example</title>
+    <title>Singapore Subzones Choropleth</title>
     <!-- D3 v7 -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
@@ -10,6 +10,12 @@
         font-family: sans-serif;
         margin: 0;
         padding: 0;
+      }
+      #controls {
+        text-align: center;
+        padding: 10px;
+        background: #f9f9f9;
+        border-bottom: 1px solid #ddd;
       }
       #map {
         width: 100%;
@@ -45,122 +51,184 @@
   </head>
   <body>
     <h1 style="text-align:center;">Singapore Subzones Choropleth</h1>
+
+    <!-- 1. FILTER CONTROLS -->
+    <div id="controls">
+      <label>
+        Age Group
+        <select id="ageGroup">
+          <option value="Total">All</option>
+        </select>
+      </label>
+      &nbsp;&nbsp;
+      <label>
+        Sex
+        <select id="sex">
+          <option value="Total">All</option>
+        </select>
+      </label>
+      &nbsp;&nbsp;
+      <label>
+        Type of Dwelling
+        <select id="dwelling">
+          <option value="Total">All</option>
+        </select>
+      </label>
+    </div>
+
     <div id="map"></div>
     <div id="tooltip" class="tooltip" style="opacity:0;"></div>
 
     <script>
-      // 1. Dimensions
-      const width = 800;
-      const height = 600;
-
-      // 2. Append an SVG inside #map
-      const svg = d3.select("#map")
-        .append("svg")
-        .attr("viewBox", [0, 0, width, height]);
-
-      const tooltip = d3.select("#tooltip");
-
-      // 3. Initial projection (will be updated with fitSize)
-      const projection = d3.geoMercator();
-      const path = d3.geoPath().projection(projection);
-
+      // 2. Load GeoJSON + CSV
       Promise.all([
         d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
         d3.csv("population2024.csv")
-      ]).then(([geojson, popData]) => {
-        // Build population lookup
-        const popBySubzone = {};
-        popData.forEach(d => {
-          popBySubzone[d.SubzoneName] = +d.Population;
-        });
+      ]).then(([geojson, populationRaw]) => {
 
-        // Compute min/max population
-        const pops = popData.map(d => +d.Population);
-        const minPop = d3.min(pops);
-        const maxPop = d3.max(pops);
+        // Keep full data for filtering
+        const allData = populationRaw.map(d => ({
+          subzone:       d.Subzone,
+          age:           d["Age Group"],
+          sex:           d.Sex,
+          dwelling:      d["Type of Dwelling"],
+          pop:           +d.Population || 0
+        }));
 
-        // Create sequential color scale
-        const colorScale = d3.scaleSequential()
-          .domain([minPop, maxPop])
-          .interpolator(d3.interpolateBlues);
+        // Build unique filter values
+        const ageGroups = Array.from(new Set(allData.map(d => d.age))).sort();
+        const sexes     = Array.from(new Set(allData.map(d => d.sex))).sort();
+        const dwellings = Array.from(new Set(allData.map(d => d.dwelling))).sort();
 
-        // Fit the projection to the GeoJSON features
+        function fillSelect(selector, values) {
+          const sel = d3.select(selector);
+          values.forEach(v => {
+            sel.append("option").attr("value", v).text(v);
+          });
+        }
+        fillSelect("#ageGroup", ageGroups);
+        fillSelect("#sex",     sexes);
+        fillSelect("#dwelling",dwellings);
+
+        // 3. SVG + projection setup
+        const width = 800, height = 600;
+        const svg = d3.select("#map")
+          .append("svg")
+            .attr("viewBox", [0, 0, width, height]);
+
+        const projection = d3.geoMercator();
+        const path       = d3.geoPath().projection(projection);
+
         projection.fitSize([width, height], geojson);
 
-        // Draw subzones
-        svg.selectAll(".subzone")
+        // Prepare legend defs
+        const defs = svg.append("defs");
+        defs.append("linearGradient")
+            .attr("id", "legend-gradient")
+            .attr("x1","0%").attr("y1","0%")
+            .attr("x2","100%").attr("y2","0%");
+
+        // 4. Draw subzones
+        const tooltip = d3.select("#tooltip");
+        let currentPopBySubzone = {};
+
+        const subzonePaths = svg.selectAll(".subzone")
           .data(geojson.features)
           .join("path")
             .attr("class", "subzone")
             .attr("d", path)
-            .attr("fill", d => {
-              const name = d.properties.SubzoneName;
-              const pop = popBySubzone[name] || 0;
-              return pop ? colorScale(pop) : "#ccc";
-            })
             .on("mouseover", (event, d) => {
               const name = d.properties.SubzoneName;
-              const pop = popBySubzone[name] || 0;
-              tooltip.style("opacity", 1)
-                .html(`<strong>${name}</strong><br/>Population: ${pop}`);
+              const pop  = currentPopBySubzone[name] || 0;
+              tooltip.style("opacity",1)
+                     .html(`<strong>${name}</strong><br/>Population: ${pop}`);
             })
             .on("mousemove", (event) => {
-              tooltip.style("left", (event.pageX + 10) + "px")
-                     .style("top", (event.pageY + 10) + "px");
+              tooltip.style("left",  (event.pageX + 10) + "px")
+                     .style("top",   (event.pageY + 10) + "px");
             })
             .on("mouseout", () => {
-              tooltip.style("opacity", 0);
+              tooltip.style("opacity",0);
             });
 
-        // 4. Legend setup
-        const legendWidth = 200;
+        // Enable pan & zoom
+        const zoom = d3.zoom()
+          .scaleExtent([1,8])
+          .on("zoom", ({transform}) => {
+            subzonePaths.attr("transform", transform);
+            svg.select(".legend").attr("transform", transform);
+          });
+        svg.call(zoom);
+
+        // 5. Legend group
+        const legendGroup = svg.append("g")
+          .attr("class","legend")
+          .attr("transform",`translate(${width-220},${height-40})`);
+        const legendWidth  = 200;
         const legendHeight = 10;
-
-        // Gradient definition
-        const defs = svg.append("defs");
-        const gradient = defs.append("linearGradient")
-          .attr("id", "legend-gradient")
-          .attr("x1", "0%").attr("y1", "0%")
-          .attr("x2", "100%").attr("y2", "0%");
-
-        gradient.selectAll("stop")
-          .data(d3.ticks(0, 1, 10))
-          .join("stop")
-            .attr("offset", d => `${d * 100}%`)
-            .attr("stop-color", d => colorScale(minPop + d * (maxPop - minPop)));
-
-        // Draw legend group
-        const legend = svg.append("g")
-          .attr("class", "legend")
-          .attr("transform", `translate(${width - legendWidth - 20},${height - 40})`);
-
-        legend.append("rect")
+        legendGroup.append("rect")
           .attr("width", legendWidth)
           .attr("height", legendHeight)
           .style("fill", "url(#legend-gradient)");
+        const legendAxisG = legendGroup.append("g")
+          .attr("transform", `translate(0,${legendHeight})`);
 
-        // Legend axis
-        const legendScale = d3.scaleLinear()
-          .domain([minPop, maxPop])
-          .range([0, legendWidth]);
+        // 6. Update function
+        function updateChoropleth() {
+          const selAge  = d3.select("#ageGroup").property("value");
+          const selSex  = d3.select("#sex").property("value");
+          const selDwel = d3.select("#dwelling").property("value");
 
-        const legendAxis = d3.axisBottom(legendScale)
-          .ticks(5)
-          .tickFormat(d3.format(".2s"));
+          // Filter & aggregate
+          currentPopBySubzone = {};
+          allData
+            .filter(d =>
+              (selAge  === "Total" || d.age     === selAge)  &&
+              (selSex  === "Total" || d.sex     === selSex)  &&
+              (selDwel === "Total" || d.dwelling=== selDwel)
+            )
+            .forEach(d => {
+              currentPopBySubzone[d.subzone] = (currentPopBySubzone[d.subzone]||0) + d.pop;
+            });
 
-        legend.append("g")
-          .attr("transform", `translate(0, ${legendHeight})`)
-          .call(legendAxis);
+          const pops   = Object.values(currentPopBySubzone);
+          const minPop = d3.min(pops), maxPop = d3.max(pops);
 
-        // 5. Pan and zoom
-        const zoom = d3.zoom()
-          .scaleExtent([1, 8])
-          .on("zoom", ({transform}) => {
-            svg.selectAll("path.subzone")
-               .attr("transform", transform);
-          });
+          // Color scale + gradient
+          const colorScale = d3.scaleSequential()
+            .domain([minPop, maxPop])
+            .interpolator(d3.interpolateBlues);
 
-        svg.call(zoom);
+          svg.select("#legend-gradient")
+            .selectAll("stop")
+            .data(d3.ticks(0,1,10))
+            .join("stop")
+              .attr("offset", d => `${d*100}%`)
+              .attr("stop-color", d => colorScale(minPop + d*(maxPop-minPop)));
+
+          // Legend axis
+          const legendScale = d3.scaleLinear()
+            .domain([minPop, maxPop])
+            .range([0, legendWidth]);
+          const legendAxis = d3.axisBottom(legendScale)
+            .ticks(5)
+            .tickFormat(d3.format(".2s"));
+          legendAxisG.call(legendAxis);
+
+          // Recolor map
+          subzonePaths
+            .transition().duration(300)
+            .attr("fill", d => {
+              const name = d.properties.SubzoneName;
+              const pop  = currentPopBySubzone[name] || 0;
+              return pop ? colorScale(pop) : "#ccc";
+            });
+        }
+
+        // Initial render + event listeners
+        updateChoropleth();
+        d3.selectAll("#ageGroup, #sex, #dwelling")
+          .on("change", updateChoropleth);
 
       }).catch(err => console.error("Error loading data:", err));
     </script>
