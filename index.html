@@ -199,8 +199,8 @@
     const legend = d3.select("#legend");
 
     Promise.all([
-      d3.json("sgmap.json"),
-      d3.csv("population2024.csv", d => ({
+      d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.json"),
+      d3.csv("population.csv", d => ({
         PlanningArea: d['Planning Area'].trim(),
         Subzone: d['Subzone'].trim(),
         AgeGroup: d['Age Group'].trim(),
