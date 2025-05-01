@@ -30,6 +30,10 @@
       stroke-width: 1;
       cursor: pointer;
     }
+    .subzone.selected {
+      stroke: #333;
+      stroke-width: 2;
+    }
     .tooltip {
       position: absolute;
       background-color: rgba(0,0,0,0.7);
@@ -46,73 +50,95 @@
     .legend .domain {
       display: none;
     }
+    #info {
+      padding: 10px;
+      background: #fff;
+      border-top: 1px solid #ddd;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 14px;
+    }
+    #info table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 8px;
+    }
+    #info th, #info td {
+      border: 1px solid #ccc;
+      padding: 4px 8px;
+      text-align: right;
+    }
+    #info th {
+      background: #f0f0f0;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
   <h1 style="text-align:center;">Singapore Subzones by Age Bracket</h1>
 
-  <!-- ─── FILTER: AGE BRACKET ─────────────────────────────────────────── -->
+  <!-- FILTER: AGE BRACKET -->
   <div id="controls">
     <label>
       Age Bracket
-      <select id="ageBracket">
-        <!-- options populated in JS -->
-      </select>
+      <select id="ageBracket"></select>
     </label>
   </div>
 
   <div id="map"></div>
   <div id="tooltip" class="tooltip" style="opacity:0;"></div>
 
+  <!-- INFO PANEL -->
+  <div id="info">
+    <em>Click on a subzone to see its full age breakdown here.</em>
+  </div>
+
   <script>
-  // ─── 1. LOAD DATA ──────────────────────────────────────────────────────
   Promise.all([
     d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
     d3.csv("population2024.csv")
   ]).then(([geojson, ageRaw]) => {
 
-    // 1.a. Identify all bracket columns (everything except the first)
-    const brackets = ageRaw.columns.slice(1);
-
-    // 1.b. Build a long-form array: { subzone, bracket, pop }
-    const allData = [];
+    // 1. Identify bracket columns and build long-form data
+    const brackets = ageRaw.columns.slice(1)  // everything except first column
+    const allData = []
     ageRaw.forEach(row => {
-      const sub = row["Planning Area/Subzone of Residence"];
+      const sub = row["Planning Area/Subzone of Residence"]
       brackets.forEach(br => {
         allData.push({
-          subzone:    sub,
-          bracket:    br,
-          pop:        +row[br] || 0
-        });
-      });
-    });
+          subzone: sub,
+          bracket: br,
+          pop: +row[br] || 0
+        })
+      })
+    })
 
-    // ─── 2. SET UP CONTROLS ──────────────────────────────────────────────
-    const ageSel = d3.select("#ageBracket");
+    // 2. Populate age-bracket dropdown
+    const ageSel = d3.select("#ageBracket")
     brackets.forEach(br => {
-      ageSel.append("option").attr("value", br).text(br);
-    });
+      ageSel.append("option").attr("value", br).text(br)
+    })
 
-    // ─── 3. SVG & PROJECTION ─────────────────────────────────────────────
-    const width = 800, height = 600;
+    // 3. Set up SVG and map projection
+    const width = 800, height = 600
     const svg = d3.select("#map")
       .append("svg")
-        .attr("viewBox", [0, 0, width, height]);
+        .attr("viewBox", [0,0,width,height])
 
-    const projection = d3.geoMercator();
-    const path       = d3.geoPath().projection(projection);
-    projection.fitSize([width, height], geojson);
+    const projection = d3.geoMercator()
+    const path       = d3.geoPath().projection(projection)
+    projection.fitSize([width, height], geojson)
 
-    // Prepare legend gradient
-    const defs = svg.append("defs");
+    // 4. Legend gradient definition
+    const defs = svg.append("defs")
     defs.append("linearGradient")
         .attr("id","legend-gradient")
         .attr("x1","0%").attr("y1","0%")
-        .attr("x2","100%").attr("y2","0%");
+        .attr("x2","100%").attr("y2","0%")
 
-    // ─── 4. DRAW SUBZONES ────────────────────────────────────────────────
-    const tooltip = d3.select("#tooltip");
-    let currentPop = {};
+    // 5. Draw subzones
+    let currentPop = {}
+    const tooltip = d3.select("#tooltip")
 
     const subzonePaths = svg.selectAll(".subzone")
       .data(geojson.features)
@@ -120,90 +146,125 @@
         .attr("class","subzone")
         .attr("d", path)
         .on("mouseover",(e,d) => {
-          const name = d.properties.SubzoneName;
-          const p = currentPop[name] || 0;
+          const name = d.properties.SubzoneName
+          const p = currentPop[name] || 0
           tooltip.style("opacity",1)
-                 .html(`<strong>${name}</strong><br>Population: ${p}`);
+                 .html(`<strong>${name}</strong><br/>Population: ${p}`)
         })
         .on("mousemove", e => {
-          tooltip.style("left",  (e.pageX + 10) + "px")
-                 .style("top",   (e.pageY + 10) + "px");
+          tooltip.style("left",  (e.pageX+10)+"px")
+                 .style("top",   (e.pageY+10)+"px")
         })
-        .on("mouseout", () => tooltip.style("opacity",0));
+        .on("mouseout", () => tooltip.style("opacity",0))
+        .on("click", (e,d) => {
+          // highlight selection
+          subzonePaths.classed("selected", d2 => d2===d)
+          // show full breakdown
+          showInfo(d.properties.SubzoneName)
+        })
 
-    // Pan & zoom
-    const zoom = d3.zoom()
+    // pan & zoom
+    svg.call(d3.zoom()
       .scaleExtent([1,8])
       .on("zoom", ({transform}) => {
-        subzonePaths.attr("transform", transform);
-        svg.select(".legend").attr("transform", transform);
-      });
-    svg.call(zoom);
+        subzonePaths.attr("transform", transform)
+        svg.select(".legend").attr("transform", transform)
+      }))
 
-    // ─── 5. LEGEND ────────────────────────────────────────────────────────
+    // 6. Legend group
     const legendG = svg.append("g")
       .attr("class","legend")
-      .attr("transform",`translate(${width-220},${height-40})`);
-    const legendW = 200, legendH = 10;
+      .attr("transform",`translate(${width-220},${height-40})`)
+    const legendW = 200, legendH = 10
 
     legendG.append("rect")
       .attr("width", legendW)
       .attr("height", legendH)
-      .style("fill","url(#legend-gradient)");
+      .style("fill","url(#legend-gradient)")
     const legendAxisG = legendG.append("g")
-      .attr("transform", `translate(0,${legendH})`);
+      .attr("transform",`translate(0,${legendH})`)
 
-    // ─── 6. UPDATE FUNCTION ─────────────────────────────────────────────
+    // 7. Update map coloring based on selected bracket
     function updateMap() {
-      const chosen = ageSel.property("value");
-
-      // 6.a. Filter & aggregate
-      currentPop = {};
+      const chosen = ageSel.property("value")
+      currentPop = {}
       allData
         .filter(d => d.bracket === chosen)
         .forEach(d => {
-          currentPop[d.subzone] = (currentPop[d.subzone]||0) + d.pop;
-        });
+          currentPop[d.subzone] = (currentPop[d.subzone]||0) + d.pop
+        })
 
-      const pops = Object.values(currentPop);
-      const minP = d3.min(pops), maxP = d3.max(pops);
+      const pops = Object.values(currentPop)
+      const minP = d3.min(pops), maxP = d3.max(pops)
 
-      // 6.b. Color scale + gradient stops
       const color = d3.scaleSequential()
         .domain([minP, maxP])
-        .interpolator(d3.interpolateBlues);
+        .interpolator(d3.interpolateBlues)
 
+      // update gradient
       svg.select("#legend-gradient")
         .selectAll("stop")
         .data(d3.ticks(0,1,10))
         .join("stop")
           .attr("offset", d => `${d*100}%`)
-          .attr("stop-color", d => color(minP + d*(maxP-minP)));
+          .attr("stop-color", d => color(minP + d*(maxP-minP)))
 
-      // 6.c. Axis
+      // update axis
       const x = d3.scaleLinear()
         .domain([minP, maxP])
-        .range([0, legendW]);
+        .range([0, legendW])
       const axis = d3.axisBottom(x)
         .ticks(5)
-        .tickFormat(d3.format(".2s"));
-      legendAxisG.call(axis);
+        .tickFormat(d3.format(".2s"))
+      legendAxisG.call(axis)
 
-      // 6.d. Recolor map
+      // recolor
       subzonePaths
         .transition().duration(300)
         .attr("fill", d => {
-          const n = d.properties.SubzoneName;
-          const v = currentPop[n] || 0;
-          return v ? color(v) : "#ccc";
-        });
+          const n = d.properties.SubzoneName
+          const v = currentPop[n] || 0
+          return v ? color(v) : "#ccc"
+        })
     }
 
-    // Initial draw + listener
-    updateMap();
-    ageSel.on("change", updateMap);
+    // 8. Display full breakdown for one subzone
+    function showInfo(subzoneName) {
+      // find the raw CSV row
+      const row = ageRaw.find(r => r["Planning Area/Subzone of Residence"] === subzoneName)
+      if (!row) {
+        d3.select("#info").html(`<p>No data for ${subzoneName}</p>`)
+        return
+      }
 
-  }).catch(err => console.error(err));
+      // build HTML table
+      let html = `<h3>${subzoneName}</h3>
+        <table>
+          <thead>
+            <tr><th>Age Bracket</th><th>Population</th></tr>
+          </thead><tbody>`
+
+      brackets.forEach(br => {
+        html += `<tr>
+          <td>${br}</td>
+          <td>${+row[br] || 0}</td>
+        </tr>`
+      })
+
+      html += `</tbody></table>`
+      d3.select("#info").html(html)
+    }
+
+    // initial render and listener
+    updateMap()
+    ageSel.on("change", () => {
+      updateMap()
+      // clear info when bracket changes
+      d3.select("#info").html(`<em>Click on a subzone to see its full age breakdown here.</em>`)
+      subzonePaths.classed("selected", false)
+    })
+
+  }).catch(err => console.error("Error loading data:", err))
   </script>
 </body>
 </html>
