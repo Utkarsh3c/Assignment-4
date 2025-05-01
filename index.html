@@ -64,120 +64,147 @@
     <div id="tooltip" class="tooltip" style="opacity:0;"></div>
 
     <script>
+      // click handler stub
       function handleSubzoneClick(name, pop) {
         alert(`Subzone: ${name}\nPopulation: ${pop}`);
       }
 
       Promise.all([
         d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
-        d3.csv("population2024_long.csv")
+        d3.csv("population2024.csv")
       ]).then(([geojson, populationRaw]) => {
-        const allData = populationRaw.map(d => ({
-          subzone: d["Subzone"],
-          age:     d["AGE"],
-          pop:     +d["Population"] || 0
-        }));
+        // Prepare age columns (all columns after 'Subzone')
+        const cols = populationRaw.columns || Object.keys(populationRaw[0]);
+        const ageCols = cols.filter(c => c !== 'SUBZONE_N' && c !== 'Subzone');
 
-        const ageGroups = Array.from(new Set(allData.map(d => d.age))).sort();
-        const ageSel    = d3.select("#ageGroup");
-        ageGroups.forEach(v => {
-          ageSel.append("option").attr("value", v).text(v);
+        // Build dropdown
+        const ageSel = d3.select('#ageGroup');
+        ageCols.forEach(age => {
+          ageSel.append('option').attr('value', age).text(age);
         });
 
+        // Map Subzone name to row
+        const popMap = new Map();
+        populationRaw.forEach(r => {
+          popMap.set(r.Subzone.trim().toLowerCase(), r);
+        });
+
+        // Set up SVG
         const width = 800, height = 600;
-        const svg = d3.select("#map").append("svg").attr("viewBox", [0, 0, width, height]);
+        const svg = d3.select('#map').append('svg')
+                      .attr('viewBox', [0, 0, width, height]);
+
         const projection = d3.geoMercator().fitSize([width, height], geojson);
         const path = d3.geoPath().projection(projection);
 
-        const defs = svg.append("defs");
-        defs.append("linearGradient")
-            .attr("id", "legend-gradient")
-            .attr("x1", "0%").attr("y1", "0%")
-            .attr("x2", "100%").attr("y2", "0%");
+        // Legend gradient
+        const defs = svg.append('defs');
+        defs.append('linearGradient')
+            .attr('id', 'legend-gradient')
+            .attr('x1', '0%').attr('y1', '0%')
+            .attr('x2', '100%').attr('y2', '0%');
 
+        // Draw subzones
         let currentPop = {};
-        const subzonePaths = svg.selectAll(".subzone")
+        const subzonePaths = svg.selectAll('.subzone')
           .data(geojson.features)
-          .join("path")
-            .attr("class", "subzone")
-            .attr("d", path)
-            .on("mouseover", (event, d) => {
+          .join('path')
+            .attr('class', 'subzone')
+            .attr('d', path)
+            .on('mouseover', (event, d) => {
               const name = d.properties.Name;
-              const pop  = currentPop[name] || 0;
-              d3.select("#tooltip")
-                .style("opacity", 1)
+              const pop  = currentPop[name.toLowerCase()] || 0;
+              d3.select('#tooltip')
+                .style('opacity', 1)
                 .html(`<strong>${name}</strong><br/>Population: ${pop}`);
             })
-            .on("mousemove", (event) => {
-              d3.select("#tooltip")
-                .style("left",  (event.pageX + 10) + "px")
-                .style("top",   (event.pageY + 10) + "px");
+            .on('mousemove', (event) => {
+              d3.select('#tooltip')
+                .style('left',  (event.pageX + 10) + 'px')
+                .style('top',   (event.pageY + 10) + 'px');
             })
-            .on("mouseout", () => {
-              d3.select("#tooltip").style("opacity", 0);
+            .on('mouseout', () => {
+              d3.select('#tooltip').style('opacity', 0);
             })
-            .on("click", (event, d) => {
+            .on('click', (event, d) => {
               const name = d.properties.Name;
-              const pop  = currentPop[name] || 0;
+              const pop  = currentPop[name.toLowerCase()] || 0;
               handleSubzoneClick(name, pop);
             });
 
-        svg.call(d3.zoom().scaleExtent([1,8]).on("zoom", ({transform}) => {
-          subzonePaths.attr("transform", transform);
-          svg.select(".legend").attr("transform", transform);
+        // Zoom & pan
+        svg.call(d3.zoom().scaleExtent([1,8]).on('zoom', ({transform}) => {
+          subzonePaths.attr('transform', transform);
+          svg.select('.legend').attr('transform', transform);
         }));
 
-        const legendGroup = svg.append("g")
-          .attr("class","legend")
-          .attr("transform", `translate(${width-220},${height-40})`);
-        const legendWidth  = 200, legendHeight = 10;
-        legendGroup.append("rect")
-          .attr("width", legendWidth)
-          .attr("height", legendHeight)
-          .style("fill", "url(#legend-gradient)");
-        const legendAxisG = legendGroup.append("g")
-          .attr("transform", `translate(0,${legendHeight})`);
+        // Legend axis group
+        const legendGroup = svg.append('g')
+          .attr('class','legend')
+          .attr('transform', `translate(${width-220},${height-40})`);
+        const legendWidth = 200, legendHeight = 10;
+        legendGroup.append('rect')
+          .attr('width', legendWidth)
+          .attr('height', legendHeight)
+          .style('fill', 'url(#legend-gradient)');
+        const legendAxisG = legendGroup.append('g')
+          .attr('transform', `translate(0,${legendHeight})`);
 
+        // Update function
         function updateChoropleth() {
-          const selAge = d3.select("#ageGroup").property("value");
+          const selAge = d3.select('#ageGroup').property('value');
           currentPop = {};
-          allData
-            .filter(d => selAge === "All" || d.age === selAge)
-            .forEach(d => {
-              currentPop[d.subzone] = (currentPop[d.subzone] || 0) + d.pop;
-            });
 
-          const pops   = Object.values(currentPop),
-                minPop = d3.min(pops),
-                maxPop = d3.max(pops);
+          // Compute population per subzone
+          populationRaw.forEach(r => {
+            const key = r.Subzone.trim().toLowerCase();
+            let val = 0;
+            if (selAge === 'All') {
+              ageCols.forEach(col => { val += +r[col] || 0; });
+            } else {
+              val = +r[selAge] || 0;
+            }
+            currentPop[key] = val;
+          });
 
-          const colorScale = d3.scaleSequential([minPop, maxPop], d3.interpolateBlues);
+          const pops = Object.values(currentPop);
+          const minPop = d3.min(pops);
+          const maxPop = d3.max(pops);
 
-          svg.select("#legend-gradient")
-            .selectAll("stop")
+          // Color scale
+          const colorScale = d3.scaleSequential()
+            .domain([minPop, maxPop])
+            .interpolator(d3.interpolateBlues);
+
+          // Update gradient stops
+          svg.select('#legend-gradient')
+            .selectAll('stop')
             .data(d3.ticks(0,1,10))
-            .join("stop")
-              .attr("offset", d => `${d*100}%`)
-              .attr("stop-color", d => colorScale(minPop + d*(maxPop-minPop)));
+            .join('stop')
+              .attr('offset', d => `${d*100}%`)
+              .attr('stop-color', d => colorScale(minPop + d*(maxPop-minPop)));
 
+          // Update legend axis
           const legendScale = d3.scaleLinear().domain([minPop, maxPop]).range([0, legendWidth]);
           d3.axisBottom(legendScale)
             .ticks(5)
-            .tickFormat(d3.format(".2s"))
+            .tickFormat(d3.format('.2s'))
             (legendAxisG);
 
+          // Recolor subzones
           subzonePaths.transition().duration(300)
-            .attr("fill", f => {
-              const name = f.properties.Name;
+            .attr('fill', f => {
+              const name = f.properties.Name.trim().toLowerCase();
               const pop  = currentPop[name] || 0;
-              return pop ? colorScale(pop) : "#ccc";
+              return pop ? colorScale(pop) : '#ccc';
             });
         }
 
+        // Initial render
         updateChoropleth();
-        d3.select("#ageGroup").on("change", updateChoropleth);
+        d3.select('#ageGroup').on('change', updateChoropleth);
 
-      }).catch(err => console.error("Error loading data:", err));
+      }).catch(err => console.error('Error loading data:', err));
     </script>
   </body>
 </html>
