@@ -73,7 +73,7 @@
         d3.csv("population2024_long.csv")
       ]).then(([geojson, populationRaw]) => {
         const allData = populationRaw.map(d => ({
-          subzone: d["Planning Area"],
+          subzone: d["Subzone"],
           age:     d["AGE"],
           pop:     +d["Population"] || 0
         }));
