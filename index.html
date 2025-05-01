@@ -1,215 +1,147 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <title>Singapore Subzones Choropleth by Age</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <style>
-      body {
-        font-family: sans-serif;
-        margin: 0;
-        padding: 0;
-      }
-      #controls {
-        text-align: center;
-        padding: 10px;
-        background: #f9f9f9;
-        border-bottom: 1px solid #ddd;
-      }
-      #map {
-        width: 100%;
-        height: 600px;
-        position: relative;
-      }
-      svg {
-        width: 100%;
-        height: 100%;
-      }
-      .subzone {
-        stroke: #fff;
-        stroke-width: 1;
-        cursor: pointer;
-      }
-      .tooltip {
-        position: absolute;
-        background-color: rgba(0,0,0,0.7);
-        color: #fff;
-        padding: 5px 8px;
-        border-radius: 3px;
-        pointer-events: none;
-        font-size: 14px;
-      }
-      .legend text {
-        font-size: 12px;
-        fill: #333;
-      }
-      .legend .domain {
-        display: none;
-      }
-    </style>
-  </head>
-  <body>
-    <h1 style="text-align:center;">Singapore Subzones Choropleth by Age</h1>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Singapore Population Choropleth by Age Group</title>
 
-    <div id="controls">
-      <label>
-        Age Group
-        <select id="ageGroup">
-          <option value="All">All</option>
-        </select>
-      </label>
-    </div>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #fff;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    .figure {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    .legend-col {
+      width: 200px;
+      margin-right: 20px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .legend-rect {
+      width: 20px;
+      height: 10px;
+      margin-right: 8px;
+      border: 1px solid #999;
+    }
+    svg {
+      flex: 1;
+      height: auto;
+    }
+    h1 {
+      font-size: 1.5em;
+      font-weight: 800;
+      margin: 0;
+      text-align: center;
+    }
+    h2.subtitle {
+      font-size: 1em;
+      font-weight: 400;
+      color: #666;
+      margin: 4px 0 0 0;
+      text-align: center;
+    }
+    .filter-container {
+      display: none;
+    }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: white;
+      padding: 6px 10px;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+      font-size: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    footer {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Population change</h1>
+  <h2 class="subtitle">Population by age group in Singapore subzones</h2>
+  <div class="figure">
+    <div class="legend-col" id="legend"></div>
+    <svg viewBox="0 0 1000 600"></svg>
+  </div>
 
-    <div id="map"></div>
-    <div id="tooltip" class="tooltip" style="opacity:0;"></div>
-
-    <script>
-      // click handler stub
-      function handleSubzoneClick(name, pop) {
-        alert(`Subzone: ${name}\nPopulation: ${pop.toLocaleString()}`);
-      }
-
-      Promise.all([
-        d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
-        d3.csv("population2024.csv")
-      ]).then(([geojson, populationRaw]) => {
-        // Extract age columns
-        const cols = populationRaw.columns || Object.keys(populationRaw[0]);
-        const ageCols = cols.filter(c => c !== 'SUBZONE_N' && c !== 'Subzone');
-
-        // Populate age dropdown
-        const ageSel = d3.select('#ageGroup');
-        ageCols.forEach(age => {
-          ageSel.append('option').attr('value', age).text(age);
-        });
-
-        // Set up SVG & projection
-        const width = 800, height = 600;
-        const svg = d3.select('#map').append('svg')
-                      .attr('viewBox', [0, 0, width, height]);
-
-        const projection = d3.geoMercator().fitSize([width, height], geojson);
+  <script>
+    const width = 1000, height = 600;
+    const svg = d3.select("svg");
+    const legend = d3.select("#legend");
+    const tooltip = d3.select("body").append("div").attr("class","tooltip");
+    Promise.all([
+      d3.json("sgmap.json"),
+      d3.csv("POP.csv", d => ({
+        Subzone: d['Subzone'].trim(),
+        AgeGroup: d['Age Group'].trim(),
+        Population: d['Population'] === '-' ? 0 : +d['Population'].replace(/,/g, '').trim()
+      }))
+    ]).then(([geo, data]) => {
+      const ageGroups = Array.from(new Set(data.map(d => d.AgeGroup))).sort();
+      const defaultGroup = 'Total';
+      // use first group or Total if exists
+      const selGroup = ageGroups.includes(defaultGroup) ? defaultGroup : ageGroups[0];
+      updateMap(selGroup);
+      function updateMap(group) {
+        const filtered = data.filter(d => group === defaultGroup || d.AgeGroup === group);
+        const pops = filtered.map(d => d.Population);
+        const maxPop = d3.max(pops) || 0;
+        const step = Math.ceil(maxPop / 7);
+        const colors = d3.schemeBlues[7];
+        const thresholds = d3.range(step, step * colors.length, step);
+        const colorScale = pops.length ? d3.scaleThreshold().domain(thresholds).range(colors) : () => "#ccc";
+        const projection = d3.geoMercator().center([103.851959, 1.290270]).fitSize([width, height], geo);
         const path = d3.geoPath().projection(projection);
-
-        // Legend gradient
-        const defs = svg.append('defs');
-        defs.append('linearGradient')
-            .attr('id', 'legend-gradient')
-            .attr('x1', '0%').attr('y1', '0%')
-            .attr('x2', '100%').attr('y2', '0%');
-
-        // Draw subzones
-        let currentPop = {};
-        const subzonePaths = svg.selectAll('.subzone')
-          .data(geojson.features)
-          .join('path')
-            .attr('class', 'subzone')
-            .attr('d', path)
-            .on('mouseover', function(event, d) {
-              const name = d.properties.Name.trim();
-              const key  = name.toLowerCase();
-              const pop  = currentPop[key] || 0;
-
-              // highlight
-              d3.select(this)
-                .attr('stroke', '#000')
-                .attr('stroke-width', 3)
-                .raise();
-
-              d3.select('#tooltip')
-                .style('opacity', 1)
-                .html(`<strong>Subzone:</strong> ${name}<br/>` +
-                      `<strong>Population:</strong> ${pop.toLocaleString()}`);
-            })
-            .on('mousemove', (event) => {
-              d3.select('#tooltip')
-                .style('left',  (event.pageX + 10) + 'px')
-                .style('top',   (event.pageY + 10) + 'px');
-            })
-            .on('mouseout', function() {
-              d3.select(this)
-                .attr('stroke', '#fff')
-                .attr('stroke-width', 1);
-              d3.select('#tooltip').style('opacity', 0);
-            })
-            .on('click', function(event, d) {
-              const name = d.properties.Name.trim();
-              const key  = name.toLowerCase();
-              const pop  = currentPop[key] || 0;
-              handleSubzoneClick(name, pop);
-            });
-
-        // Enable pan & zoom
-        svg.call(d3.zoom().scaleExtent([1,8]).on('zoom', ({transform}) => {
-          subzonePaths.attr('transform', transform);
-          svg.select('.legend').attr('transform', transform);
-        }));
-
-        // Legend axis
-        const legendGroup = svg.append('g')
-          .attr('class','legend')
-          .attr('transform', `translate(${width-220},${height-40})`);
-        const legendWidth = 200, legendHeight = 10;
-        legendGroup.append('rect')
-          .attr('width', legendWidth)
-          .attr('height', legendHeight)
-          .style('fill', 'url(#legend-gradient)');
-        const legendAxisG = legendGroup.append('g')
-          .attr('transform', `translate(0,${legendHeight})`);
-
-        // Update choropleth
-        function updateChoropleth() {
-          const selAge = d3.select('#ageGroup').property('value');
-          currentPop = {};
-
-          populationRaw.forEach(r => {
-            const key = r.Subzone.trim().toLowerCase();
-            let val = 0;
-            if (selAge === 'All') {
-              ageCols.forEach(col => val += +r[col] || 0);
-            } else {
-              val = +r[selAge] || 0;
-            }
-            currentPop[key] = val;
+        const regions = svg.selectAll("path").data(geo.features);
+        regions.enter().append("path").merge(regions)
+          .attr("d", path)
+          .attr("stroke", "#666").attr("stroke-width", 1)
+          .attr("fill", d => {
+            const rec = filtered.find(x => x.Subzone.toUpperCase() === d.properties.Name.toUpperCase());
+            return rec ? colorScale(rec.Population) : "#ccc";
+          })
+          .on("mouseover", (event, d) => {
+            d3.select(event.currentTarget).raise().attr("stroke", "#333").attr("stroke-width", 2);
+            const rec = filtered.find(x => x.Subzone.toUpperCase() === d.properties.Name.toUpperCase()) || {};
+            tooltip.transition().duration(50).style("opacity", 1);
+            tooltip.html(`<strong>${d.properties.Name}</strong><br/>${(rec.Population||0).toLocaleString()}`);
+          })
+          .on("mousemove", event => tooltip.style("left", (event.pageX + 10) + "px").style("top", (event.pageY + 10) + "px"))
+          .on("mouseout", (event) => {
+            d3.select(event.currentTarget).attr("stroke", "#666").attr("stroke-width", 1);
+            tooltip.transition().duration(50).style("opacity", 0);
           });
-
-          const pops = Object.values(currentPop);
-          const minPop = d3.min(pops);
-          const maxPop = d3.max(pops);
-
-          const colorScale = d3.scaleSequential()
-            .domain([minPop, maxPop])
-            .interpolator(d3.interpolateBlues);
-
-          // update gradient
-          svg.select('#legend-gradient')
-            .selectAll('stop')
-            .data(d3.ticks(0,1,10))
-            .join('stop')
-              .attr('offset', d => `${d*100}%`)
-              .attr('stop-color', d => colorScale(minPop + d*(maxPop-minPop)));
-
-          // update legend axis
-          const legendScale = d3.scaleLinear().domain([minPop, maxPop]).range([0, legendWidth]);
-          d3.axisBottom(legendScale)
-            .ticks(5)
-            .tickFormat(d3.format('.2s'))
-            (legendAxisG);
-
-          // recolor
-          subzonePaths.transition().duration(300)
-            .attr('fill', f => {
-              const nm = f.properties.Name.trim().toLowerCase();
-              const p  = currentPop[nm] || 0;
-              return p ? colorScale(p) : '#ccc';
-            });
+        regions.exit().remove();
+        // legend
+        legend.selectAll(".legend-item").remove();
+        if (pops.length) {
+          colors.forEach((c, i) => {
+            const from = i * step;
+            const to = (i + 1) * step;
+            const item = legend.append("div").attr("class", "legend-item");
+            item.append("div").attr("class", "legend-rect").style("background", c);
+            item.append("div").text(`${from.toLocaleString()} – ${to.toLocaleString()}`);
+          });
         }
-
-        // initial render & listener
-        updateChoropleth();
-        d3.select('#ageGroup').on('change', updateChoropleth);
-
-      }).catch(err => console.error('Error loading data:', err));
-    </script>
-  </body>
+      }
+    }).catch(err => console.error(err));
+  </script>
+</body>
 </html>
