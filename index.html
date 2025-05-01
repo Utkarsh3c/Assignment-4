@@ -15,6 +15,20 @@
       padding: 20px;
       color: #333;
     }
+    .filter-container {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .filter-container label {
+      font-weight: 600;
+      margin-right: 8px;
+    }
+    .filter-container select {
+      padding: 6px 12px;
+      font-size: 0.9em;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+    }
     .figure {
       display: flex;
       align-items: flex-start;
@@ -70,6 +84,12 @@
 <body>
   <h1>Population change</h1>
   <h2 class="subtitle">Population by age group in Singapore subzones</h2>
+
+  <div class="filter-container">
+    <label for="ageSelect">Age Group:</label>
+    <select id="ageSelect"></select>
+  </div>
+
   <div class="figure">
     <div class="legend-col" id="legend"></div>
     <svg viewBox="0 0 1000 600"></svg>
@@ -84,108 +104,80 @@
     Promise.all([
       d3.json("MasterPlan2019SubzoneBoundaryNoSeaGEOJSON.geojson"),
       d3.csv("POP.csv", d => ({
-        PlanningArea: d['Planning Area'].trim(),
         Subzone: d['Subzone'].trim(),
         AgeGroup: d['Age Group'].trim(),
         Population: d['Population'] === '-' ? 0 : +d['Population'].replace(/,/g, '').trim()
       }))
     ]).then(([geo, data]) => {
-      // Filter and map by selected age group
-      const ageSel = d3.select("#ageSelect");
-      const ageGroups = Array.from(new Set(popData.map(d => d.AgeGroup))).sort();
-      ageGroups.forEach(age => ageSel.append("option").attr("value", age).text(age));
-      ageSel.property("value", "Total");
+      // Populate age group selector
+      const ageSelect = d3.select("#ageSelect");
+      const ageGroups = Array.from(new Set(data.map(d => d.AgeGroup))).sort();
+      ageSelect.append("option").attr("value", "Total").text("Total");
+      ageGroups.forEach(age => ageSelect.append("option").attr("value", age).text(age));
+      ageSelect.on("change", () => updateMap(ageSelect.property("value")));
 
-      const dwellSel = d3.select("#dwellingSelect");
-      const dwellingTypes = Array.from(new Set(popData.map(d => d.DwellingType))).sort();
-      dwellingTypes.forEach(type => dwellSel.append("option").attr("value", type).text(type));
-      dwellSel.property("value", "Total");
+      // Initial render
+      updateMap("Total");
 
-      d3.select("#sexSelect").property("value", "Total");
+      function updateMap(group) {
+        // Filter data rows by age group
+        const filtered = data.filter(d => group === "Total" || d.AgeGroup === group);
 
-      updateMap();
+        // Create lookup map: subzone name -> total population
+        const popMap = {};
+        filtered.forEach(d => {
+          const key = d.Subzone.toUpperCase();
+          popMap[key] = (popMap[key] || 0) + d.Population;
+        });
 
-      d3.select("#sexSelect").on("change", updateMap);
-      d3.select("#ageSelect").on("change", updateMap);
-      d3.select("#dwellingSelect").on("change", updateMap);
+        // Compute color scale domain
+        const pops = Object.values(popMap);
+        const maxPop = d3.max(pops) || 0;
+        const step = Math.ceil(maxPop / 7) || 1;
+        const colors = d3.schemeBlues[7];
+        const thresholds = d3.range(step, step * colors.length, step);
+        const colorScale = d3.scaleThreshold().domain(thresholds).range(colors);
 
-      function updateMap() {
-        const selSex     = d3.select("#sexSelect").property("value");
-        const selAge     = d3.select("#ageSelect").property("value");
-        const selDwelling= d3.select("#dwellingSelect").property("value");
-
-        const filtered = popData.filter(d => 
-          (selSex      === "Total" || d.Sex         === selSex) &&
-          (selAge      === "Total" || d.AgeGroup    === selAge) &&
-          (selDwelling === "Total" || d.DwellingType=== selDwelling)
-        );
-
-        console.log('Filters', selSex, selAge, selDwelling, 'Rows:', filtered.length);
-
-        const pops = filtered.map(d => d.Population);
-        
-        const step       = 20000;
-        const colors     = d3.schemeBlues[7];
-        const thresholds = d3.range(step, step * colors.length, step); 
-        const color = pops.length
-          ? d3.scaleThreshold().domain(thresholds).range(colors)
-          : () => "#ccc";
-
+        // Projection and path
         const projection = d3.geoMercator()
           .center([103.851959, 1.290270])
           .fitSize([width, height], geo);
         const path = d3.geoPath().projection(projection);
 
+        // Draw or update regions
         const regions = svg.selectAll("path").data(geo.features);
-        regions.enter().append("path")
-          .merge(regions)
+        regions.enter().append("path").merge(regions)
           .attr("d", path)
-          .attr("stroke", "#666")
-          .attr("stroke-width", 1)
+          .attr("stroke", "#666").attr("stroke-width", 1)
           .attr("fill", d => {
-            const rec = filtered.find(x =>
-              x.Subzone.toUpperCase() === d.properties.Name.toUpperCase()
-            );
-            return (!rec || rec.Population === 0)
-              ? "#ccc"
-              : color(rec.Population);
+            const key = d.properties.Name.trim().toUpperCase();
+            return popMap[key] != null ? colorScale(popMap[key]) : "#ccc";
           })
-          
-          .on("mouseover", function(event, d) {
-            d3.select(this).raise().attr("stroke", "#333").attr("stroke-width", 3);
-            const rec = filtered.find(x =>
-              x.Subzone.toUpperCase() === d.properties.Name.toUpperCase()
-            ) || {};
+          .on("mouseover", (event, d) => {
+            d3.select(event.currentTarget).raise().attr("stroke", "#333").attr("stroke-width", 2);
+            const key = d.properties.Name.trim().toUpperCase();
+            const val = popMap[key] || 0;
             tooltip.transition().duration(50).style("opacity", 1);
-            tooltip.html(
-              `<strong>Subzone:</strong> ${d.properties.Name}<br/>` +
-              `<strong>Planning Area:</strong> ${rec.PlanningArea || "—"}<br/>` +
-              `<strong>Population:</strong> ${(rec.Population || 0).toLocaleString()}`
-            );
+            tooltip.html(`<strong>${d.properties.Name}</strong><br/>${val.toLocaleString()}`);
           })
-          .on("mousemove", event => tooltip.style("left", (event.pageX+12)+"px").style("top", (event.pageY+12)+"px"))
-          .on("mouseout", function() {
-            d3.select(this).attr("stroke", "#666").attr("stroke-width", 1);
+          .on("mousemove", event => tooltip.style("left", (event.pageX + 10) + "px").style("top", (event.pageY + 10) + "px"))
+          .on("mouseout", event => {
+            d3.select(event.currentTarget).attr("stroke", "#666").attr("stroke-width", 1);
             tooltip.transition().duration(50).style("opacity", 0);
           });
         regions.exit().remove();
 
-        const legendItems = svg.selectAll(".legend-item").data([]);
+        // Build legend
         legend.selectAll(".legend-item").remove();
-        if (pops.length) {
-          colors.forEach((c, i) => {
-            const from = i * step;
-            const to   = (i + 1) * step;
-            const item = legend.append("div").attr("class","legend-item");
-            item.append("div")
-                .attr("class","legend-rect")
-                .style("background", c);
-            item.append("div")
-                .text(`${from.toLocaleString()} – ${to.toLocaleString()}`);
-          });
-        }
+        colors.forEach((c, i) => {
+          const from = i * step;
+          const to = (i + 1) * step;
+          const item = legend.append("div").attr("class", "legend-item");
+          item.append("div").attr("class", "legend-rect").style("background", c);
+          item.append("div").text(`${from.toLocaleString()} – ${to.toLocaleString()}`);
+        });
       }
-    }).catch(err => console.error("Error loading data:", err));
+    }).catch(err => console.error(err));
   </script>
 </body>
 </html>
