@@ -97,9 +97,7 @@
         const max = d3.max(values) || 0;
         const step = Math.ceil(max / 7) || 1;
         const colors = d3.quantize(d3.interpolateViridis, 7);
-        // replace highest viridis color (purple) with light grey
-        colors[colors.length - 1] = '#d3d3d3';
-        const thresholds = d3.range(step, step * colors.length, step);
+        const thresholds = d3.range(step, step * colors.length, step); = d3.range(step, step * colors.length, step);
         const scale = d3.scaleThreshold().domain(thresholds).range(colors);
 
         const projection = d3.geoMercator().center([103.851959, 1.290270]).fitSize([width, height], geo);
