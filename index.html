@@ -65,8 +65,8 @@
 
     <script>
       // click handler stub
-      function handleSubzoneClick(name, pop, planningArea) {
-        alert(`Subzone: ${name}\nPlanning Area: ${planningArea}\nPopulation: ${pop}`);
+      function handleSubzoneClick(name, pop) {
+        alert(`Subzone: ${name}\nPopulation: ${pop.toLocaleString()}`);
       }
 
       Promise.all([
@@ -81,21 +81,6 @@
         const ageSel = d3.select('#ageGroup');
         ageCols.forEach(age => {
           ageSel.append('option').attr('value', age).text(age);
-        });
-
-        // Build population lookup by subzone
-        const popRawMap = new Map();
-        populationRaw.forEach(r => {
-          popRawMap.set(r.Subzone.trim().toLowerCase(), r);
-        });
-
-        // Build planning area lookup from GeoJSON Description HTML
-        const planningMap = {};
-        geojson.features.forEach(f => {
-          const key = f.properties.Name.trim().toLowerCase();
-          const desc = f.properties.Description;
-          const match = /<th>PLN_AREA_N<\/th>\s*<td>(.*?)<\/td>/.exec(desc);
-          planningMap[key] = match ? match[1] : 'Unknown';
         });
 
         // Set up SVG & projection
@@ -124,7 +109,6 @@
               const name = d.properties.Name.trim();
               const key  = name.toLowerCase();
               const pop  = currentPop[key] || 0;
-              const area = planningMap[key] || 'Unknown';
 
               // highlight
               d3.select(this)
@@ -135,7 +119,6 @@
               d3.select('#tooltip')
                 .style('opacity', 1)
                 .html(`<strong>Subzone:</strong> ${name}<br/>` +
-                      `<strong>Planning Area:</strong> ${area}<br/>` +
                       `<strong>Population:</strong> ${pop.toLocaleString()}`);
             })
             .on('mousemove', (event) => {
@@ -143,7 +126,7 @@
                 .style('left',  (event.pageX + 10) + 'px')
                 .style('top',   (event.pageY + 10) + 'px');
             })
-            .on('mouseout', function(event, d) {
+            .on('mouseout', function() {
               d3.select(this)
                 .attr('stroke', '#fff')
                 .attr('stroke-width', 1);
@@ -153,8 +136,7 @@
               const name = d.properties.Name.trim();
               const key  = name.toLowerCase();
               const pop  = currentPop[key] || 0;
-              const area = planningMap[key] || 'Unknown';
-              handleSubzoneClick(name, pop, area);
+              handleSubzoneClick(name, pop);
             });
 
         // Enable pan & zoom
