@@ -78,7 +78,7 @@
         // Parse data
         const allData = populationRaw.map(d => ({
           subzone: d.Subzone,
-          age:     d["Age Group"] || d.Age,
+          age:     d["Age"] || d.Age,
           pop:     +d.Population || 0
         }));
 
