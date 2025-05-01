@@ -1,21 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Singapore Population Choropleth</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
   <style>
-    body { margin:0; padding:0; position:relative; font-family:sans-serif; background:#fff; }
+    body { margin:0; padding:0; position:relative; background:#fff; font-family:sans-serif; }
     h1 { position:absolute; top:10px; left:10px; margin:0; font-size:1.5em; font-weight:800; }
     h2.sub { position:absolute; top:36px; left:10px; margin:0; font-size:1em; color:#666; }
     .filter { position:absolute; top:10px; right:10px; background:#fff; padding:8px; border:1px solid #ccc; border-radius:4px; }
     .filter label { margin-right:6px; font-weight:600; }
     .filter select { margin-right:12px; font-size:14px; }
     svg.map { display:block; width:100vw; height:100vh; }
+    svg.legend-svg { position:absolute; left:10px; top:60px; width:20px; height:300px; }
     .tooltip { position:absolute; pointer-events:none; background:#fff; padding:4px 8px; border:1px solid #aaa; border-radius:4px; font-size:12px; box-shadow:0 1px 2px rgba(0,0,0,0.2); opacity:0; transition:opacity 0.1s; }
-    .legend-svg { position:absolute; left:10px; top:60px; width:20px; height:300px; }
   </style>
 </head>
 <body>
@@ -35,61 +35,94 @@
   <svg class="legend-svg"></svg>
   <div class="tooltip"></div>
   <script>
-    const width=1000,height=600;
-    const svg=d3.select('svg.map');
-    const legendSvg=d3.select('svg.legend-svg');
-    const tooltip=d3.select('.tooltip');
+    const width = 1000, height = 600;
+    const svg = d3.select('svg.map');
+    const legendSvg = d3.select('svg.legend-svg');
+    const tooltip = d3.select('.tooltip');
 
     Promise.all([
       d3.json('sgmap.json'),
-      d3.csv('population.csv',d=>({ Subzone:d.Subzone.trim(), PlanningArea:d['Planning Area']?.trim()||'', AgeGroup:d['Age Group'].trim(), Sex:d['Sex'].trim(), Population:+d.Population.replace(/,/g,'')||0 }))
-    ]).then(([geo,data])=>{
+      d3.csv('population.csv', d => ({
+        Subzone: d.Subzone.trim(),
+        PlanningArea: d['Planning Area']?.trim() || '',
+        AgeGroup: d['Age Group'].trim(),
+        Sex: d['Sex'].trim(),
+        Population: +d.Population.replace(/,/g, '') || 0
+      }))
+    ]).then(([geo, data]) => {
       // Populate selectors
-      const ageGroups=Array.from(new Set(data.map(d=>d.AgeGroup))).sort();
-      const ageSelect=d3.select('#ageSelect');
-      ageSelect.append('option').attr('value','Total').text('Total');
-      ageGroups.forEach(a=>ageSelect.append('option').attr('value',a).text(a));
-      d3.select('#genderSelect').on('change',updateMap);
-      ageSelect.on('change',updateMap);
+      const ageGroups = Array.from(new Set(data.map(d => d.AgeGroup))).sort();
+      const ageSelect = d3.select('#ageSelect');
+      ageSelect.append('option').attr('value', 'Total').text('Total');
+      ageGroups.forEach(a => ageSelect.append('option').attr('value', a).text(a));
+      ageSelect.on('change', updateMap);
+      d3.select('#genderSelect').on('change', updateMap);
+
+      // Initial draw
       updateMap();
 
-      function updateMap(){
-        const selAge=ageSelect.property('value'),selSex=d3.select('#genderSelect').property('value');
-        const filtered=data.filter(d=>(selAge==='Total'||d.AgeGroup===selAge)&&(selSex==='Total'||d.Sex===selSex));
-        // build map
-        const popMap={}, areaMap={};
-        filtered.forEach(d=>{const k=d.Subzone.toUpperCase();popMap[k]=(popMap[k]||0)+d.Population;areaMap[k]=d.PlanningArea;});
+      function updateMap() {
+        const selAge = ageSelect.property('value');
+        const selSex = d3.select('#genderSelect').property('value');
+        const filtered = data.filter(d =>
+          (selAge === 'Total' || d.AgeGroup === selAge) &&
+          (selSex === 'Total' || d.Sex === selSex)
+        );
 
-        // continuous scale
-        const vals=Object.values(popMap),max=d3.max(vals)||0;
-        const colorScale=d3.scaleSequential(d3.interpolateOranges).domain([0,max]);
-
-        // legend gradient
-        legendSvg.selectAll('*').remove();
-        const lg=legendSvg.node();
-        const defs=legendSvg.append('defs');
-        const gradient=defs.append('linearGradient').attr('id','grad').attr('x1','0%').attr('y1','100%').attr('x2','0%').attr('y2','0%');
-        const stops=20;
-        d3.range(0,1+1e-9,1/(stops-1)).forEach((t,i)=>{
-          gradient.append('stop').attr('offset',`${t*100}%`).attr('stop-color',colorScale(max*t));
+        // Build lookup maps
+        const popMap = {}, areaMap = {};
+        filtered.forEach(d => {
+          const key = d.Subzone.toUpperCase();
+          popMap[key] = (popMap[key] || 0) + d.Population;
+          areaMap[key] = d.PlanningArea;
         });
-        legendSvg.append('rect').attr('width',20).attr('height',300).attr('fill','url(#grad)');
-        // axis scale
-        
 
-        // projection
-        const proj=d3.geoMercator().center([103.851959,1.290270]).fitSize([width,height],geo);
-        const path=d3.geoPath().projection(proj);
+        // Continuous color scale (Oranges)
+        const values = Object.values(popMap);
+        const max = d3.max(values) || 0;
+        const colorScale = d3.scaleSequential(d3.interpolateOranges).domain([0, max]);
 
-        // draw
-        const regions=svg.selectAll('path').data(geo.features);
+        // Draw legend gradient only (no numbers)
+        legendSvg.selectAll('*').remove();
+        const defs = legendSvg.append('defs');
+        const gradient = defs.append('linearGradient').attr('id', 'grad')
+          .attr('x1', '0%').attr('y1', '100%').attr('x2', '0%').attr('y2', '0%');
+        const stops = 20;
+        d3.range(0, 1 + 1e-9, 1 / (stops - 1)).forEach((t) => {
+          gradient.append('stop')
+            .attr('offset', `${t * 100}%`)
+            .attr('stop-color', colorScale(max * t));
+        });
+        legendSvg.append('rect')
+          .attr('width', 20)
+          .attr('height', 300)
+          .attr('fill', 'url(#grad)');
+
+        // Projection and path
+        const projection = d3.geoMercator()
+          .center([103.851959, 1.290270])
+          .fitSize([width, height], geo);
+        const path = d3.geoPath().projection(projection);
+
+        // Render map
+        const regions = svg.selectAll('path').data(geo.features);
         regions.enter().append('path').merge(regions)
-          .attr('d',path).attr('stroke','#333').attr('stroke-width',2)
-          .attr('fill',d=>{const k=(d.properties.Name||'').trim().toUpperCase();return popMap[k]!=null?colorScale(popMap[k]):'#ccc';})
-          .attr('fill-opacity',0.7)
-          .on('mouseover',(e,d)=>{const k=(d.properties.Name||'').trim().toUpperCase();const val=popMap[k]||0;const area=areaMap[k]||'—';tooltip.style('opacity',1).html(`<strong>${d.properties.Name}</strong><br/>Area: ${area}<br/>${val.toLocaleString()}`);})
-          .on('mousemove',e=>tooltip.style('left',e.pageX+10+'px').style('top',e.pageY+10+'px'))
-          .on('mouseout',()=>tooltip.style('opacity',0));
+          .attr('d', path)
+          .attr('stroke', '#333').attr('stroke-width', 2)
+          .attr('fill', d => {
+            const key = (d.properties.Name || '').trim().toUpperCase();
+            return popMap[key] != null ? colorScale(popMap[key]) : '#ccc';
+          })
+          .attr('fill-opacity', 0.7)
+          .on('mouseover', (e, d) => {
+            const key = (d.properties.Name || '').trim().toUpperCase();
+            const val = popMap[key] || 0;
+            const area = areaMap[key] || '—';
+            tooltip.style('opacity', 1)
+              .html(`<strong>${d.properties.Name}</strong><br/>Area: ${area}<br/>Pop: ${val.toLocaleString()}`);
+          })
+          .on('mousemove', e => tooltip.style('left', (e.pageX + 10) + 'px').style('top', (e.pageY + 10) + 'px'))
+          .on('mouseout', () => tooltip.style('opacity', 0));
         regions.exit().remove();
       }
     }).catch(console.error);
